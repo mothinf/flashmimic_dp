@@ -29,7 +29,7 @@ scripts/parity/                         # 不含 DDS/实机的离线检查
 sudo apt update
 sudo apt install -y \
   build-essential cmake git curl file \
-  libyaml-cpp-dev libboost-all-dev libeigen3-dev \
+  libyaml-cpp-dev libboost-program-options-dev libeigen3-dev \
   libspdlog-dev libfmt-dev
 ```
 
