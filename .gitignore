@@ -1,0 +1,34 @@
+# Third-party sources fetched by scripts/setup.sh — do not commit
+/unitree_mujoco/
+/unitree_rl_lab/
+/unitree_sdk2/
+# Cached onnxruntime archives (arch-specific; setup.sh selects per `uname -m`)
+/onnxruntime-linux-x64-*.tgz
+/onnxruntime-linux-aarch64-*.tgz
+
+# Local PyTorch checkpoints sometimes dropped alongside the deploy assets
+assets/*.pt
+
+# Build artifacts
+build/
+dist/
+*.o
+*.a
+*.so
+*.so.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE / editor
+.idea/
+*.swp
+.DS_Store
+# Keep workspace-level VSCode settings (multi-repo scan ignore) — but not user state
+.vscode/*
+!.vscode/settings.json
+.deps/
