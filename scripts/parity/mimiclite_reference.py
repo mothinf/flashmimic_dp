@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Reference side of the MimicLite State_WBT offline check (no DDS, no robot, no MuJoCo).
 
-The training contract is UniLab ``feat/mimiclite-obs``
-``warpsac/task/g1_motion_tracking/mjwarp_mimiclite_dr.yaml``; the actor terms
-below are NumPy ports of ``unilab/tasks/motion_tracking/common/obs_terms.py``.
+Inputs default to the selected WBT state in the controller configuration.
+Geometry comes from a supplied XML or a configurable UniLab Git reference;
+the actor terms below are NumPy ports of the MimicLite observation contract.
 
 Sensor stream = the reference clip itself ("perfect tracking"): pelvis IMU quat
 and gyro, joint q / dq taken from the training NPZ, with the IMU yaw rotated by
@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import argparse
 import struct
-import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
 import yaml
+
+from deployment_config import add_deployment_args, add_geometry_args, load_geometry, resolve_deployment
 
 DEPLOY_WS = Path(__file__).resolve().parents[2]
 ISAACLAB_ORDER = [0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5, 11,
@@ -249,22 +250,30 @@ def run_episode(cfg, motion, sess, start, steps, yaw_offset, root_col, torso_col
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--config", type=Path, default=DEPLOY_WS / "assets/mimiclite_dr_140k_deploy_config.yaml")
-    p.add_argument("--onnx", type=Path, default=DEPLOY_WS / "assets/policy.onnx")
-    p.add_argument("--motion", type=Path, default=DEPLOY_WS / "assets/dance1_subject2_part.npz")
-    p.add_argument("--unilab", type=Path, default=DEPLOY_WS.parent / "UniLab")
-    p.add_argument("--unilab-ref", default="origin/feat/mimiclite-obs")
-    p.add_argument("--out", type=Path, default=Path("/tmp/mimiclite_parity"))
+    add_deployment_args(p, motion=True)
+    add_geometry_args(p)
+    p.add_argument("--out", type=Path, default=DEPLOY_WS / ".deps/checks/reference")
     args = p.parse_args()
+    try:
+        deployment = resolve_deployment(args, motion=True)
+        xml, source = load_geometry(args)
+    except (OSError, ValueError) as exc:
+        p.error(str(exc))
+    args.config, args.onnx, args.motion = deployment.config, deployment.onnx, deployment.motion
+    print(f"Policy: {args.onnx}\nMotion: {args.motion}\nGeometry: {source}")
 
     cfg = yaml.safe_load(args.config.read_text())
     motion = dict(np.load(args.motion))
+    if motion["joint_pos"].shape[0] == 0:
+        raise SystemExit("Motion must contain at least one frame")
     root_col = int(cfg["root_body_idx_in_motion"])
     torso_col = 16
-    xml = subprocess.run(["git", "-C", str(args.unilab), "show",
-                          f"{args.unilab_ref}:src/unilab/assets/robots/g1/g1.xml"],
-                         check=True, capture_output=True, text=True).stdout
-    bodies = parse_bodies(xml)
+    try:
+        bodies = parse_bodies(xml)
+    except (ET.ParseError, AttributeError, ValueError) as exc:
+        p.error(f"Invalid G1 MJCF from {source}: {exc}")
+    if len(bodies) + 1 != motion["body_pos_w"].shape[1] or len(bodies) < max(root_col, torso_col):
+        p.error(f"MJCF body layout from {source} does not match the motion")
     names = [b[0] for b in bodies]
     print(f"MJCF bodies: {len(bodies)} (+world) vs NPZ columns {motion['body_pos_w'].shape[1]}; "
           f"col {root_col}={names[root_col - 1]}, col {torso_col}={names[torso_col - 1]}")
@@ -275,13 +284,19 @@ def main():
     print(f"[1] NPZ joint order, FK vs NPZ body poses over {motion['joint_pos'].shape[0]} frames:")
     print(f"    SDK/MJCF order : max pos err {e_pos:.2e} m, max ori err {e_ang:.2e} deg")
     print(f"    IsaacLab order : max pos err {i_pos:.2e} m, max ori err {i_ang:.2e} deg  (contrast)")
+    if e_pos > 1e-4 or e_ang > 0.1:
+        raise SystemExit("MJCF does not match the motion's SDK joint order/geometry; "
+                         "select a matching --mjcf or --unilab-ref")
 
     sess = ort.InferenceSession(str(args.onnx), providers=["CPUExecutionProvider"])
     last = motion["joint_pos"].shape[0] - 1
     stats = {}
-    plan = [(0, last + 1, 0.0), (400, 60, np.pi / 2), (200, 100, -2.8)]
+    handoff = int(np.ceil(float(cfg.get("handoff_duration_s", 0.0)) / float(cfg["ctrl_dt"])))
+    plan = [(0, max(last + 1, handoff + 1), 0.0),
+            (min(400, last), 60, np.pi / 2), (min(200, last), 100, -2.8)]
     episodes = []
     for start, steps, yaw in plan:
+        steps = min(steps, handoff + last - start + 1)
         sens, rows = run_episode(cfg, motion, sess, start, steps, yaw, root_col, torso_col, stats)
         episodes.append((start, sens, rows))
         print(f"    episode start={start:3d} steps={steps:3d} imu_yaw_offset={np.degrees(yaw):+7.1f} deg")
@@ -299,8 +314,10 @@ def main():
     refq = np.asarray(stats["ref_q"])
     lo, hi = np.asarray(cfg["joint_lower"]), np.asarray(cfg["joint_upper"])
     groups = {"legs": slice(0, 12), "waist": slice(12, 15), "arms": slice(15, 29)}
+    action_diffs = np.abs(np.diff(act[:len(episodes[0][1])], axis=0))
+    rate_p99 = float(np.percentile(action_diffs, 99)) if action_diffs.size else 0.0
     print(f"[3] policy: |raw action| max {np.abs(act).max():.3f}, mean {np.abs(act).mean():.3f}; "
-          f"action rate |a_t - a_t-1| p99 {np.percentile(np.abs(np.diff(act[:last + 1], axis=0)), 99):.3f}")
+          f"action rate |a_t - a_t-1| p99 {rate_p99:.3f}")
     print("    target - reference q (mean abs / max abs, rad): " + ", ".join(
         f"{g} {np.abs(tgt[:, s] - refq[:, s]).mean():.3f}/{np.abs(tgt[:, s] - refq[:, s]).max():.3f}"
         for g, s in groups.items()))

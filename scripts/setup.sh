@@ -54,7 +54,10 @@ clone_pinned() {
 
 apply_patch_idempotent() {
     local repo="$1" patch="$2"
-    if git -C "$repo" apply --check --reverse "$patch" 2>/dev/null; then
+    shift 2
+    # Optional exclusions affect detection only. Runtime YAML is editable by
+    # operators, so its selected model must not prevent detecting patched code.
+    if git -C "$repo" apply --check --reverse "$@" "$patch" 2>/dev/null; then
         echo "[$repo] patch already applied: $(basename "$patch")"
         return
     fi
@@ -111,7 +114,11 @@ fi
 echo ""
 echo "=== 3/3 applying local patches ==="
 apply_patch_idempotent unitree_mujoco "$REPO_ROOT/patches/unitree_mujoco-g1-scene.patch"
-apply_patch_idempotent unitree_rl_lab "$REPO_ROOT/patches/unitree_rl_lab-wbt-fsm.patch"
+apply_patch_idempotent unitree_rl_lab "$REPO_ROOT/patches/unitree_rl_lab-wbt-fsm.patch" \
+    --exclude=deploy/robots/g1_29dof/config/config.yaml
+# Migrate an already prepared deployment without replacing its chosen model,
+# motion, or PD gains. Fresh checkouts already contain only the retained dance.
+"${PYTHON:-python3}" "$REPO_ROOT/scripts/prune_legacy_dances.py"
 
 echo ""
 echo "✓ setup complete.  workspace layout:"

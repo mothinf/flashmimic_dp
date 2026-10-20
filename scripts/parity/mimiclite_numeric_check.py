@@ -2,27 +2,31 @@
 """Pure numerical smoke test for the MimicLite deployment contract.
 
 This deliberately avoids MuJoCo, DDS, and robot state.  It validates the
-checked-in YAML/ONNX contract, evaluates the exported actor on deterministic
+selected deployment YAML/ONNX contract, evaluates the exported actor on deterministic
 finite observations, repeats the same calls for bit-stable results, and checks
 the one-step target delay used by ``MotionJointPositionAction``.
 """
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
 import yaml
 
+from deployment_config import add_deployment_args, resolve_deployment
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=Path,
-                        default=Path(__file__).parents[2] / "assets/mimiclite_dr_140k_deploy_config.yaml")
-    parser.add_argument("--onnx", type=Path,
-                        default=Path(__file__).parents[2] / "assets/policy.onnx")
+    add_deployment_args(parser)
     args = parser.parse_args()
+    try:
+        deployment = resolve_deployment(args)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    args.config, args.onnx = deployment.config, deployment.onnx
+    print(f"Deployment config: {args.config}\nPolicy: {args.onnx}")
 
     cfg = yaml.safe_load(args.config.read_text())
     obs_dim, action_dim = int(cfg["obs_dim"]), int(cfg["action_dim"])

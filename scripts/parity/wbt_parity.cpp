@@ -88,7 +88,7 @@ int main(int argc, char** argv)
     }
     try {
     const YAML::Node deploy_cfg = YAML::LoadFile(argv[1]);
-    const YAML::Node fsm_cfg    = YAML::LoadFile(argv[2])["FSM"][argv[6]];
+    const YAML::Node fsm_cfg    = YAML::LoadFile(argv[2])["FSM"][std::string(argv[6])];
     const std::string dir       = argv[5];
     const int obs_dim = deploy_cfg["obs_dim"].as<int>();
     const int row_dim = obs_dim + 2 * kJ;

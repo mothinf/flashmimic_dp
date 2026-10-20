@@ -316,54 +316,63 @@ index 0e29419..1b00612 100644
    ${PROJECT_SOURCE_DIR}/../../thirdparty/onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0
  )
 diff --git a/deploy/robots/g1_29dof/config/config.yaml b/deploy/robots/g1_29dof/config/config.yaml
-index 8cc97fe..ab512f3 100644
 --- a/deploy/robots/g1_29dof/config/config.yaml
 +++ b/deploy/robots/g1_29dof/config/config.yaml
-@@ -15,6 +15,11 @@ FSM:
-       id: 102
-       type: Mimic
+@@ -8,12 +8,10 @@
+       id: 3
+       type: RLBase
  
-+    # deploy_ws: parallel WBT chain — independent runtime from Mimic_*.
+-    Mimic_Dance_102: # uncomment to enable
+-      id: 101
+-      type: Mimic
+-    Mimic_Gangnam_Style:
+-      id: 102
+-      type: Mimic
++    # deploy_ws: the single retained dance.
 +    Mimic_WBT_Dance1:
 +      id: 110
 +      type: WBT
-+
+ 
    Passive:
      transitions: 
-       FixStand: LT + up.on_pressed
-@@ -61,10 +66,11 @@ FSM:
+@@ -61,29 +59,41 @@
        ]
      ]
    Velocity:
 -    transitions: 
 +    transitions:
        Passive: LT + B.on_pressed
-       Mimic_Dance_102: LT(2s) + down.on_pressed
-       Mimic_Gangnam_Style: LT(2s) + left.on_pressed
+-      Mimic_Dance_102: LT(2s) + down.on_pressed
+-      Mimic_Gangnam_Style: LT(2s) + left.on_pressed
 +      Mimic_WBT_Dance1: LT(2s) + right.on_pressed
  
      policy_dir: config/policy/velocity
      # policy_dir: ../../../logs/rsl_rl/unitree_g1_29dof_velocity
-@@ -78,7 +84,7 @@ FSM:
-     time_start: 2.8
-     time_end: 24.0
-   Mimic_Gangnam_Style:
+-  Mimic_Dance_102:
 -    transitions: 
-+    transitions:
-       Passive: LT + B.on_pressed
-       Velocity: RB + X.on_pressed
-     fps: 60
-@@ -87,3 +93,34 @@ FSM:
-     time_start: 5.2
-     time_end: 25.5
- 
-+  # deploy_ws: parallel WBT chain.  Source of truth = deploy_ws/assets/* (paths
++
++  # deploy_ws: WBT dance. Source of truth = deploy_ws/assets/* (paths
 +  # resolve from this controller's project root: g1_29dof/).  Current policy:
 +  # UniLab G1MotionTrackingSAC MimicLite-obs DR 140k (397-d obs -> 29-d action).
 +  Mimic_WBT_Dance1:
 +    transitions:
-+      Passive: LT + B.on_pressed
-+      Velocity: RB + X.on_pressed
+       Passive: LT + B.on_pressed
+       Velocity: RB + X.on_pressed
+-    fps: 60
+-    motion_file: config/policy/mimic/dance_102/params/G1_Take_102.bvh_60hz.csv
+-    policy_dir: config/policy/mimic/dance_102/
+-    time_start: 2.8
+-    time_end: 24.0
+-  Mimic_Gangnam_Style:
+-    transitions: 
+-      Passive: LT + B.on_pressed
+-      Velocity: RB + X.on_pressed
+-    fps: 60
+-    motion_file: config/policy/mimic/gangnam_style/params/G1_gangnam_style_V01.bvh_60hz.csv
+-    policy_dir: config/policy/mimic/gangnam_style/
+-    time_start: 5.2
+-    time_end: 25.5
+-
 +    deploy_config: ../../../../assets/mimiclite_dr_140k_deploy_config.yaml
 +    # policy.onnx keeps its weights in policy.onnx.data — both must sit in the same dir.
 +    policy:        ../../../../assets/policy.onnx

@@ -15,7 +15,7 @@ g++ -std=c++17 -O2 \
     -I "$ORT/include" \
     -I "$WS/unitree_sdk2/include" \
     "$WS/scripts/parity/rlbase_gate_test.cpp" "$G1/src/State_RLBase.cpp" \
-    "$ORT/lib/libonnxruntime.so.1.22.0" -lyaml-cpp -lpthread \
+    "$ORT/lib/libonnxruntime.so.1.22.0" -lyaml-cpp -lfmt -lpthread \
     -Wl,-rpath,"$ORT/lib" \
     -o "$OUT/rlbase_gate_test"
 "$OUT/rlbase_gate_test" "$G1"
